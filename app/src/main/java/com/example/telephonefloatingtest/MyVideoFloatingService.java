@@ -16,6 +16,7 @@ import android.widget.RelativeLayout;
 import android.widget.VideoView;
 
 
+
 /**
  * Created by 半米阳光 on 2017/8/2.
  */
@@ -83,9 +84,9 @@ public class MyVideoFloatingService extends Service {
         params.x = 0;
         params.y = 0;
 
-        //设置悬浮窗口长宽数据
-        params.width = 640;
-        params.height = 360;
+        /** 设置悬浮窗口长宽数据,必须设置否则windowmanager默认全屏显示，无法响应下层的点击事件 */
+        params.width = WindowManager.LayoutParams.MATCH_PARENT;
+        params.height = WindowManager.LayoutParams.WRAP_CONTENT;
 
         windowManager.addView(mFloatLayout,params);
 

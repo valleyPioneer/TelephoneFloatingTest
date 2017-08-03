@@ -1,6 +1,7 @@
 package com.example.telephonefloatingtest;
 
 import android.Manifest;
+import android.app.ActivityManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -8,21 +9,17 @@ import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
-import android.provider.ContactsContract;
 import android.provider.Settings;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
-import android.support.v4.view.ViewPager;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
-import android.telecom.TelecomManager;
 import android.telephony.PhoneStateListener;
 import android.telephony.TelephonyManager;
-import android.widget.TextView;
+import android.util.Log;
 import android.widget.Toast;
 
-import java.security.Permission;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -45,8 +42,8 @@ public class MainActivity extends AppCompatActivity {
     private void registerBroadReceiver(){
         myPhoneReceiver = new MyPhoneReceiver();
         IntentFilter intentFilter = new IntentFilter();
-        intentFilter.addAction("android.intent.action.PHONE_STATE");
         intentFilter.addAction(Intent.ACTION_NEW_OUTGOING_CALL);
+        intentFilter.addAction(TelephonyManager.ACTION_PHONE_STATE_CHANGED);
         registerReceiver(myPhoneReceiver,intentFilter);
     }
 
@@ -116,17 +113,21 @@ public class MainActivity extends AppCompatActivity {
             unregisterReceiver(myPhoneReceiver);
     }
 
+
     /** 自定义广播接收器 */
     class MyPhoneReceiver extends BroadcastReceiver {
         private boolean incomingFlag = false;
+        private boolean outgoingFlag = false;
         private ServiceHelper serviceHelper;
         private TelephonyManager telephonyManager;
+        private int previousState = -1;
 
         @Override
         public void onReceive(final Context context, Intent intent) {
-            /** 去电逻辑 */
+            /** 去电逻辑,小米系统接收不到此广播，而华为可以 */
             if (intent.getAction().equals(Intent.ACTION_NEW_OUTGOING_CALL)) {
-                incomingFlag = false;
+                outgoingFlag = true;
+                Log.i("PhoneTest","outgoing call!!!");
                 serviceHelper = new ServiceHelper() {
                     @Override
                     public void operateService() {
@@ -138,6 +139,17 @@ public class MainActivity extends AppCompatActivity {
             }
             /** 来电逻辑 */
             else {
+                Log.i("PhoneTest","receive a call!!!");
+                if(serviceHelper == null)
+                    serviceHelper = new ServiceHelper() {
+                        @Override
+                        public void operateService() {
+                            Intent startIntent = new Intent(context, MyVideoFloatingService.class);
+                            context.startService(startIntent);
+                        }
+                    };
+                serviceHelper.operateService();
+
                 if(telephonyManager == null){
                     telephonyManager = (TelephonyManager) context.getSystemService(TELEPHONY_SERVICE);
                     telephonyManager.listen(new MyPhoneStateListener(context), PhoneStateListener.LISTEN_CALL_STATE);
@@ -160,6 +172,7 @@ public class MainActivity extends AppCompatActivity {
             public void onCallStateChanged(int state, String incomingNumber) {
                 switch (state) {
                     case TelephonyManager.CALL_STATE_RINGING:
+                        Log.i("PhoneTest","ringing");
                         incomingFlag = true;
                         serviceHelper = new ServiceHelper() {
                             @Override
@@ -168,10 +181,12 @@ public class MainActivity extends AppCompatActivity {
                                 mContext.startService(startIntent);
                             }
                         };
-                        serviceHelper.operateService();
+                        previousState = TelephonyManager.CALL_STATE_RINGING;
                         break;
                     case TelephonyManager.CALL_STATE_OFFHOOK:
+                        Log.i("PhoneTest","offhook");
                         if (incomingFlag) {
+                            incomingFlag = false;
                             serviceHelper = new ServiceHelper() {
                                 @Override
                                 public void operateService() {
@@ -179,9 +194,35 @@ public class MainActivity extends AppCompatActivity {
                                     mContext.stopService(stopIntent);
                                 }
                             };
-                            serviceHelper.operateService();
                         }
-                    default:
+                        else if(outgoingFlag || previousState == TelephonyManager.CALL_STATE_IDLE){
+                            outgoingFlag = false;
+                            serviceHelper = new ServiceHelper() {
+                                @Override
+                                public void operateService() {
+                                    Intent startIntent = new Intent(mContext, MyVideoFloatingService.class);
+                                    mContext.startService(startIntent);
+                                }
+                            };
+                        }
+                        previousState = TelephonyManager.CALL_STATE_OFFHOOK;
+                        break;
+                    case TelephonyManager.CALL_STATE_IDLE:
+                        Log.i("PhoneTest","idle");
+                        if(incomingFlag || outgoingFlag
+                                || previousState == TelephonyManager.CALL_STATE_IDLE
+                                || previousState == TelephonyManager.CALL_STATE_OFFHOOK){
+                            incomingFlag = false;
+                            serviceHelper = new ServiceHelper() {
+                                @Override
+                                public void operateService() {
+                                    Intent stopIntent = new Intent(mContext, MyVideoFloatingService.class);
+                                    mContext.stopService(stopIntent);
+                                }
+                            };
+                        }
+                        previousState = TelephonyManager.CALL_STATE_IDLE;
+                        break;
                 }
                 super.onCallStateChanged(state, incomingNumber);
             }
